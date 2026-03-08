@@ -402,16 +402,20 @@ function WeekView({ db, setDb }) {
     setTasks([...tasks]);
   }, [active, weekDates]); // db intentionally excluded — toggles must not be overwritten
 
-  // One-time load when Supabase data arrives (db goes from empty to populated)
-  const initialised = useRef(false);
+  // Load from Supabase when db populates after auth — but never overwrite
+  // local state after user has interacted (toggles, adds)
+  const dbLoaded = useRef(false);
   useEffect(() => {
-    if (initialised.current) return;
-    const wd    = weekDates[active];
+    if (dbLoaded.current) return;
+    // Don't fire on empty db — wait for real data
+    if (Object.keys(db).length === 0) return;
+    dbLoaded.current = true;
+    const wd  = weekDates[active];
+    const key = `${wd.y}-${wd.m}-${wd.d}`;
+    loadedKey.current = key; // allow the day-change effect to also see this as loaded
     const tasks = db?.[wd.y]?.[wd.m]?.[wd.d] ?? [];
-    initialised.current = true;
-    loadedKey.current   = `${wd.y}-${wd.m}-${wd.d}`;
     setTasks([...tasks]);
-  }, [db]); // triggers once when real data arrives
+  }, [db]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Toggle ────────────────────────────────────────────────────────────────
   const toggle = useCallback(async (id) => {
@@ -432,7 +436,9 @@ function WeekView({ db, setDb }) {
     } else {
       setTasks([...current, task]);
     }
-    // Also update db so other views reflect the new task
+    // Lock dbLoaded so the db update below doesn't trigger a reload from db
+    dbLoaded.current = true;
+    // Update db so Month/Year views reflect the new task
     setDb(prev => {
       const t = task._replaceId ? { ...task, _replaceId:undefined } : task;
       const [y,m,d] = t.date.split("-").map(Number);
