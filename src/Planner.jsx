@@ -287,7 +287,7 @@ function TaskRow({ task, onToggle }) {
 }
 
 // ─── ADD TASK ─────────────────────────────────────────────────────────────────
-function AddTask({ dateObj, onAdd }) {
+function AddTask({ dateObj, onAdd, userId }) {
   const [open, setOpen]   = useState(false);
   const [val, setVal]     = useState("");
   const [prio, setPrio]   = useState("med");
@@ -303,7 +303,7 @@ function AddTask({ dateObj, onAdd }) {
     // Persist
     const { data, error } = await supabase
       .from("tasks")
-      .insert([{ title, priority:prio, done:false, date:dateStr }])
+      .insert([{ title, priority:prio, done:false, date:dateStr, user_id:userId }])
       .select().single();
     if (error) { console.error("Insert error:", error); return; }
     // Replace optimistic id with real uuid
@@ -371,7 +371,7 @@ function RingChart({ pct, size = 82 }) {
 }
 
 // ─── WEEK VIEW ────────────────────────────────────────────────────────────────
-function WeekView({ db, setDb }) {
+function WeekView({ db, setDb, userId }) {
   // Anchor to today — stable across renders
   const today      = useMemo(() => new Date(), []);
   const todayIdx   = useMemo(() => weekdayIdx(today), [today]);
@@ -605,7 +605,7 @@ function WeekView({ db, setDb }) {
           ? <div style={{ fontSize:12, color:T.dimmer, fontFamily:T.font, padding:"12px 0" }}>No tasks — add one below</div>
           : localTasks.map(t => <TaskRow key={t.id} task={t} onToggle={() => toggle(t.id)}/>)
         }
-        <AddTask dateObj={activeDateObj} onAdd={handleAdd}/>
+        <AddTask dateObj={activeDateObj} onAdd={handleAdd} userId={userId}/>
       </Panel>
 
       {/* ── Progress ring ── */}
@@ -643,7 +643,7 @@ function WeekView({ db, setDb }) {
 }
 
 // ─── MONTH VIEW ───────────────────────────────────────────────────────────────
-function MonthView({ db, setDb, focusDate, setFocusDate }) {
+function MonthView({ db, setDb, focusDate, setFocusDate, userId }) {
   const [y, setY]         = useState(focusDate.year);
   const [m, setM]         = useState(focusDate.month);
   const [selected, setSel] = useState(focusDate.day);
@@ -734,7 +734,7 @@ function MonthView({ db, setDb, focusDate, setFocusDate }) {
               ? <div style={{ fontSize:12, color:T.dimmer, fontFamily:T.font }}>No tasks</div>
               : selTasks.map(t => <TaskRow key={t.id} task={t} onToggle={() => toggleSel(t.id)}/>)
             }
-            <AddTask dateObj={{ y, m, d:selected }} onAdd={(task) => {
+            <AddTask dateObj={{ y, m, d:selected }} userId={userId} onAdd={(task) => {
               const upd = task._replaceId
                 ? selRef.current.map(t => t.id===task._replaceId ? {...task,_replaceId:undefined} : t)
                 : [...selRef.current, task];
@@ -955,10 +955,10 @@ export default function App() {
         <TopBar view={view} setView={setView} user={user} onSignOut={signOut} cursor={cursorStr}/>
         <div style={{ position:"relative", minHeight:0 }}>
           <ViewLayer visible={view==="Week"}>
-            <WeekView db={db} setDb={setDb}/>
+            <WeekView db={db} setDb={setDb} userId={user?.id}/>
           </ViewLayer>
           <ViewLayer visible={view==="Month"}>
-            <MonthView db={db} setDb={setDb} focusDate={focusDate} setFocusDate={setFocusDate}/>
+            <MonthView db={db} setDb={setDb} focusDate={focusDate} setFocusDate={setFocusDate} userId={user?.id}/>
           </ViewLayer>
           <ViewLayer visible={view==="Year"}>
             <YearView db={db} focusDate={focusDate} setFocusDate={setFocusDate} setView={setView}/>
