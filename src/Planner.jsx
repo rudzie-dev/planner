@@ -62,54 +62,74 @@ function getMonthDone(db, year, month) {
 // ─── GLOBAL CSS ───────────────────────────────────────────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap');
-  @keyframes orbFloat {
-    0%,100% { transform:translate(0,0) scale(1); }
-    35%      { transform:translate(26px,-20px) scale(1.03); }
-    70%      { transform:translate(-14px,30px) scale(0.97); }
+
+  @keyframes gradientShift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
   }
+  @keyframes meshDrift {
+    0%,100% { opacity:1; transform:scale(1) translate(0,0); }
+    33%      { opacity:0.7; transform:scale(1.08) translate(2%,1%); }
+    66%      { opacity:0.85; transform:scale(0.96) translate(-1%,2%); }
+  }
+
   *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-  html,body,#root { width:100%; height:100%; overflow:hidden; background:#000; font-family:'DM Sans',sans-serif; color:#fff; }
+  html,body,#root { width:100%; height:100%; overflow:hidden; font-family:'DM Sans',sans-serif; color:#fff; background:#07070d; }
   ::-webkit-scrollbar { display:none; }
+
+  .bg-gradient {
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background: linear-gradient(125deg,
+      #07070d 0%,
+      #0c0c18 18%,
+      #0f0f1e 35%,
+      #0a0a14 52%,
+      #0d0d1a 68%,
+      #080810 85%,
+      #07070d 100%
+    );
+    background-size: 300% 300%;
+    animation: gradientShift 34s ease infinite;
+  }
+  .bg-gradient::before {
+    content:'';
+    position:absolute; inset:0;
+    background:
+      radial-gradient(ellipse 90% 70% at 15% 15%, rgba(255,255,255,0.025) 0%, transparent 65%),
+      radial-gradient(ellipse 70% 90% at 85% 85%, rgba(255,255,255,0.02) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 60% at 50% 50%, rgba(255,255,255,0.01) 0%, transparent 75%);
+    animation: meshDrift 46s ease-in-out infinite;
+  }
+  .bg-gradient::after {
+    content:'';
+    position:absolute; inset:0;
+    background:
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255,255,255,0.018) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 60% at 20% 80%, rgba(255,255,255,0.015) 0%, transparent 60%);
+    animation: meshDrift 38s ease-in-out infinite reverse;
+  }
 `;
 
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
-function Orbs() {
-  return (
-    <div style={{ position:"fixed", inset:0, zIndex:0, pointerEvents:"none", overflow:"hidden" }}>
-      {[
-        { s:500, x:"-8%",  y:"-12%", dur:30, del:0   },
-        { s:360, x:"66%",  y:"54%",  dur:25, del:-10  },
-        { s:280, x:"26%",  y:"76%",  dur:37, del:-19  },
-      ].map((o, i) => (
-        <div key={i} style={{
-          position:"absolute", width:o.s, height:o.s, left:o.x, top:o.y,
-          borderRadius:"50%",
-          background:"radial-gradient(circle,rgba(255,255,255,0.09) 0%,transparent 70%)",
-          filter:"blur(80px)",
-          animation:`orbFloat ${o.dur}s ease-in-out ${o.del}s infinite`,
-        }}/>
-      ))}
-    </div>
-  );
+// ─── BACKGROUND ───────────────────────────────────────────────────────────────
+function GradientBg() {
+  return <div className="bg-gradient"/>;
 }
 
 function Panel({ children, style = {}, onClick }) {
   return (
     <div onClick={onClick} style={{
-      background: T.glass,
-      border: `1px solid ${T.border}`,
-      backdropFilter: "blur(36px) saturate(150%)",
-      WebkitBackdropFilter: "blur(36px) saturate(150%)",
+      background: "rgba(255,255,255,0.038)",
+      border: "1px solid rgba(255,255,255,0.09)",
+      backdropFilter: "blur(40px) saturate(160%)",
+      WebkitBackdropFilter: "blur(40px) saturate(160%)",
       borderRadius: 18,
       position: "relative",
       overflow: "hidden",
       ...style,
     }}>
-      <div style={{
-        position:"absolute", top:0, left:0, right:0, height:1,
-        background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)",
-        pointerEvents:"none", zIndex:1,
-      }}/>
+
       {children}
     </div>
   );
@@ -175,7 +195,7 @@ function AuthScreen() {
       position:"fixed", inset:0, zIndex:100,
       display:"flex", alignItems:"center", justifyContent:"center", background:"#000",
     }}>
-      <Orbs/>
+      <GradientBg/>
       <Panel style={{ padding:"44px 48px", width:340, zIndex:1, textAlign:"center" }}>
         <div style={{ fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:T.dim, marginBottom:28, fontFamily:T.font }}>Planner</div>
         <div style={{ fontSize:28, fontWeight:300, color:"#fff", fontFamily:T.font, letterSpacing:"-0.02em", lineHeight:1, marginBottom:8 }}>Welcome back</div>
@@ -513,7 +533,7 @@ function WeekView({ db, setDb }) {
                     willChange:"transform,opacity,filter",
                   }}
                 >
-                  {isActive && <div style={{ position:"absolute", top:0, left:0, right:0, height:1, background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.14),transparent)" }}/>}
+                  
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
                     <div>
                       <div style={{ fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", color: isToday && isActive ? "rgba(255,255,255,0.6)" : T.dim, fontFamily:T.font, fontWeight:500, marginBottom:5 }}>
@@ -912,7 +932,7 @@ export default function App() {
   if (!authed) return (
     <>
       <style>{CSS}</style>
-      <Orbs/>
+      <GradientBg/>
       <AuthScreen/>
     </>
   );
@@ -920,7 +940,7 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      <Orbs/>
+      <GradientBg/>
       <div style={{
         position:"relative", zIndex:1,
         display:"grid", gridTemplateRows:"auto 1fr",
