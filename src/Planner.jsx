@@ -284,50 +284,60 @@ function TopBar({view,setView,user,onSignOut,cursor}) {
 const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
 function WeekView({db, focusDate, setFocusDate}) {
-  const [active,setActive] = useState(()=>{
-    const now=new Date();
-    return now.getDay()===0?6:now.getDay()-1;
-  });
+  // Always start on today's weekday (0=Mon … 6=Sun)
+  const todayIdx = useMemo(()=>{
+    const d = new Date().getDay(); // 0=Sun
+    return d === 0 ? 6 : d - 1;
+  },[]);
+
+  const [active, setActive] = useState(todayIdx);
   const lockRef = useRef(false);
   const dragRef = useRef(null);
   const wrapRef = useRef(null);
 
-  const now   = new Date();
-  const year  = now.getFullYear();
-  const month = now.getMonth()+1;
-
-  // Get Mon–Sun for current week
+  // Build Mon–Sun dates for the current week (stable)
   const weekDates = useMemo(()=>{
-    const d = new Date(now);
-    const day = d.getDay()===0?6:d.getDay()-1;
-    d.setDate(d.getDate()-day);
+    const now = new Date();
+    const base = new Date(now);
+    base.setDate(now.getDate() - todayIdx); // rewind to Monday
     return Array.from({length:7},(_,i)=>{
-      const x = new Date(d); x.setDate(d.getDate()+i);
+      const x = new Date(base);
+      x.setDate(base.getDate() + i);
       return { y:x.getFullYear(), m:x.getMonth()+1, d:x.getDate(), name:WEEK_DAYS[i] };
     });
-  },[]);
+  },[todayIdx]);
 
   const activeDateObj = weekDates[active];
-  const tasks = db?.[activeDateObj.y]?.[activeDateObj.m]?.[activeDateObj.d] ?? [];
-  const [localTasks, setLocalTasks] = useState(tasks);
 
+  // localTasks lives in a ref so toggle never has a stale closure
+  const [localTasks, setLocalTasks] = useState([]);
+  const localTasksRef = useRef([]);
+  function syncTasks(tasks) {
+    localTasksRef.current = tasks;
+    setLocalTasks(tasks);
+  }
+
+  // Re-sync whenever active day or db changes
   useEffect(()=>{
-    setLocalTasks(db?.[activeDateObj.y]?.[activeDateObj.m]?.[activeDateObj.d] ?? []);
-  },[active,db]);
+    const tasks = db?.[activeDateObj.y]?.[activeDateObj.m]?.[activeDateObj.d] ?? [];
+    syncTasks([...tasks]);
+  },[active, db, activeDateObj.y, activeDateObj.m, activeDateObj.d]);
 
   const toggle = useCallback(async (id)=>{
-    const task = localTasks.find(x=>x.id===id);
-    if(!task) return;
+    // Read from ref — never stale
+    const current = localTasksRef.current;
+    const task = current.find(x => x.id === id);
+    if (!task) return;
     const newDone = !task.done;
     // Optimistic update
-    setLocalTasks(prev=>prev.map(t=>t.id===id?{...t,done:newDone}:t));
-    const { error } = await supabase.from("tasks").update({done:newDone}).eq("id",id);
-    if(error){
+    const updated = current.map(t => t.id === id ? {...t, done: newDone} : t);
+    syncTasks(updated);
+    const { error } = await supabase.from("tasks").update({done: newDone}).eq("id", id);
+    if (error) {
       console.error("Toggle error:", error);
-      // Revert on failure
-      setLocalTasks(prev=>prev.map(t=>t.id===id?{...t,done:!newDone}:t));
+      syncTasks(current); // revert
     }
-  },[localTasks]);
+  },[]);
 
   const done  = localTasks.filter(t=>t.done).length;
   const total = localTasks.length;
@@ -464,7 +474,15 @@ function WeekView({db, focusDate, setFocusDate}) {
           ? <div style={{fontSize:12,color:T.dimmer,fontFamily:T.font,padding:"12px 0"}}>No tasks — enjoy the day</div>
           : localTasks.map(t=><TaskRow key={t.id} task={t} onToggle={()=>toggle(t.id)}/>)
         }
-        <AddTask date={activeDateObj} onAdd={(task)=>setLocalTasks(p=>[...p,task])}/>
+        <AddTask date={activeDateObj} onAdd={(task)=>{
+          if (task._replaceId) {
+            // Swap optimistic entry with persisted one
+            const next = localTasksRef.current.map(t => t.id === task._replaceId ? {...task, _replaceId:undefined} : t);
+            syncTasks(next);
+          } else {
+            syncTasks([...localTasksRef.current, task]);
+          }
+        }}/>
       </Panel>
 
       {/* Ring */}
@@ -512,23 +530,19 @@ function AddTask({date,onAdd}) {
   const [prio,setPrio]=useState("med");
 
   async function submit() {
-    if(!val.trim()) return;
+    if (!val.trim()) return;
     const dateStr = `${date.y}-${String(date.m).padStart(2,"0")}-${String(date.d).padStart(2,"0")}`;
-    const task = {
-      id: `optimistic-${Date.now()}`,
-      title: val.trim(), priority: prio, done: false, date: dateStr,
-    };
-    // Optimistic update
+    const optimisticId = `optimistic-${Date.now()}`;
+    const task = { id: optimisticId, title: val.trim(), priority: prio, done: false, date: dateStr };
     onAdd(task);
     setVal(""); setOpen(false);
-    // Persist to Supabase
     const { data, error } = await supabase
       .from("tasks")
       .insert([{ title: task.title, priority: task.priority, done: false, date: dateStr }])
       .select().single();
     if (error) { console.error("Insert error:", error); return; }
-    // Swap optimistic id with real uuid
-    onAdd({ ...task, id: data.id, _replaceOptimistic: task.id });
+    // Replace optimistic entry with persisted one
+    onAdd({ ...task, id: data.id, _replaceId: optimisticId });
   }
 
   return (
