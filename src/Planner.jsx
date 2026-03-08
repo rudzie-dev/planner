@@ -27,6 +27,26 @@ const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","N
 const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const EMPTY_DB  = {};
 
+// ─── CACHE HELPERS ────────────────────────────────────────────────────────────
+function cacheKey(userId) { return `planner_db_${userId}`; }
+function saveCache(userId, db) {
+  try { localStorage.setItem(cacheKey(userId), JSON.stringify(db)); } catch(_) {}
+}
+function loadCache(userId) {
+  try { const r = localStorage.getItem(cacheKey(userId)); return r ? JSON.parse(r) : null; } catch(_) { return null; }
+}
+function buildDb(data) {
+  const built = {};
+  data.forEach(t => {
+    const [y,m,d] = t.date.split("-").map(Number);
+    if (!built[y]) built[y]={};
+    if (!built[y][m]) built[y][m]={};
+    if (!built[y][m][d]) built[y][m][d]=[];
+    built[y][m][d].push({id:t.id,title:t.title,priority:t.priority,done:t.done,date:t.date});
+  });
+  return built;
+}
+
 // ─── DATE HELPERS ─────────────────────────────────────────────────────────────
 // Returns 0=Mon … 6=Sun for any Date object
 function weekdayIdx(date) {
@@ -907,26 +927,32 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load all tasks from Supabase when user logs in
+  // Load tasks: instantly from cache, then sync from Supabase in background
   useEffect(() => {
     if (!user) return;
+    // 1. Show cached data immediately — zero delay
+    const cached = loadCache(user.id);
+    if (cached) setDb(cached);
+    // 2. Fetch from Supabase in background — update + re-cache
     supabase.from("tasks").select("*").then(({ data, error }) => {
       if (error) { console.error("Tasks fetch:", error); return; }
-      if (!data || data.length === 0) return; // stay on empty db
-      const built = {};
-      data.forEach(t => {
-        const [y, m, d] = t.date.split("-").map(Number);
-        if (!built[y])     built[y]     = {};
-        if (!built[y][m])  built[y][m]  = {};
-        if (!built[y][m][d]) built[y][m][d] = [];
-        built[y][m][d].push({ id:t.id, title:t.title, priority:t.priority, done:t.done, date:t.date });
-      });
+      if (!data) return;
+      const built = data.length > 0 ? buildDb(data) : EMPTY_DB;
       setDb(built);
+      saveCache(user.id, built);
     });
   }, [user]);
 
+  // Persist db to cache whenever it changes so next load is instant
+  useEffect(() => {
+    if (!user || Object.keys(db).length === 0) return;
+    saveCache(user.id, db);
+  }, [db, user]);
+
   async function signOut() {
+    const uid = user?.id;
     await supabase.auth.signOut();
+    if (uid) try { localStorage.removeItem(cacheKey(uid)); } catch(_) {}
     setUser(null); setAuthed(false); setDb(EMPTY_DB);
   }
 
